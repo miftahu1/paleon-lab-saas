@@ -29,7 +29,7 @@ hosts:
     intentional_findings:
       - outdated_dependency_version
       - dev_subdomain_discovery
-    notes: "Node/Express app with version disclosure"
+    notes: "Node/Express app with explicit version disclosure"
 
   - hostname: "legacy.paleon-lab-saas.dev"
     purpose: "dns_only_indicator"
@@ -108,23 +108,22 @@ findings:
     category: "outdated_software"
     severity: "medium"
     claim_strength: "detected"
-    description: "Outdated Express.js version disclosed via response headers"
+    description: "Outdated Express.js version explicitly disclosed via X-Powered-By header"
     evidence:
       header: "X-Powered-By"
-      value: "Express"
-      version: "4.17.1"
+      expected_value: "Express/4.17.1"
       method: "GET"
       path: "/"
     host: "dev.paleon-lab-saas.dev"
     verification:
-      - "curl -I https://dev.paleon-lab-saas.dev | grep X-Powered-By should show Express"
-    notes: "Real outdated dependency (Express 4.17.1 released 2019), not a CVE claim"
+      - "curl -I https://dev.paleon-lab-saas.dev | grep -i X-Powered-By should show 'Express/4.17.1'"
+    notes: "Real outdated dependency (Express 4.17.1 released 2019), version explicitly set in application middleware"
 
   - id: "subdomain-takeover-indicator"
     category: "subdomain_takeover"
     severity: "medium"
     claim_strength: "indicator"
-    description: "Subdomain CNAME points to potentially unclaimed resource"
+    description: "Subdomain CNAME points to safe non-claimable target"
     evidence:
       hostname: "legacy.paleon-lab-saas.dev"
       record_type: "CNAME"
@@ -133,7 +132,7 @@ findings:
     host: "legacy.paleon-lab-saas.dev"
     verification:
       - "dig legacy.paleon-lab-saas.dev CNAME should return legacy-placeholder.example.invalid"
-    notes: "INDICATOR ONLY - not a confirmed takeover, safe placeholder target"
+    notes: "INDICATOR ONLY - not a confirmed takeover, safe placeholder target using .invalid TLD (RFC 6761)"
 
   - id: "missing-permissions-policy"
     category: "security_headers"
@@ -183,7 +182,13 @@ must_not_flag:
     reason: "Valid Let's Encrypt TLS with modern configuration"
 
   - category: "email_security_weakness"
-    reason: "SPF -all and DMARC p=reject configured (no-mail posture)"
+    reason: "SPF -all, DMARC p=reject, DNSSEC enabled, CAA configured (clean email/DNS posture)"
+
+  - category: "missing_dnssec"
+    reason: "DNSSEC is enabled via KSK and DS records"
+
+  - category: "missing_caa"
+    reason: "CAA records restrict issuance to Let's Encrypt only"
 
 security_posture:
   tls:
@@ -192,7 +197,7 @@ security_posture:
       - "paleon-lab-saas.dev"
       - "app.paleon-lab-saas.dev"
       - "dev.paleon-lab-saas.dev"
-    notes: "Valid trusted certificates, hostname matches, modern TLS configuration"
+    notes: "Valid trusted certificates, hostname matches, modern TLS configuration, HTTP→HTTPS redirect"
 
   security_headers:
     main_host:
@@ -220,7 +225,7 @@ security_posture:
   network:
     open_ports:
       - port: 80
-        purpose: "HTTP (redirects to HTTPS)"
+        purpose: "HTTP (redirects to HTTPS after TLS setup)"
         access: "0.0.0.0/0"
       - port: 443
         purpose: "HTTPS"
@@ -233,7 +238,9 @@ security_posture:
   email:
     spf: "v=spf1 -all"
     dmarc: "v=DMARC1; p=reject;"
-    notes: "No-mail posture, no DKIM, no mail servers"
+    dnssec: "enabled"
+    caa: "letsencrypt.org only"
+    notes: "Clean email/DNS posture with full DNSSEC and CAA"
 
 scanner_capabilities:
   can_detect:
@@ -245,6 +252,8 @@ scanner_capabilities:
     - "DNS CNAME records"
     - "Missing security headers"
     - "TLS certificate validation"
+    - "DNSSEC presence"
+    - "CAA records"
 
   cannot_detect:
     - "Exploitability of disclosed versions without active exploitation"
@@ -259,6 +268,8 @@ validation_commands:
     - "dig app.paleon-lab-saas.dev +short"
     - "dig dev.paleon-lab-saas.dev +short"
     - "dig legacy.paleon-lab-saas.dev CNAME +short"
+    - "dig paleon-lab-saas.dev DNSKEY +short"
+    - "dig paleon-lab-saas.dev CAA +short"
 
   http:
     - "curl -I https://paleon-lab-saas.dev"
@@ -279,7 +290,7 @@ validation_commands:
   tls:
     - "echo | openssl s_client -connect paleon-lab-saas.dev:443 -servername paleon-lab-saas.dev 2>/dev/null | openssl x509 -noout -subject -dates"
 
-deployment_date: "2026-09-01"
-last_validated: "2026-09-01"
+deployment_date: "2026-09-02"
+last_validated: "2026-09-02"
 test_environment: true
 authorized_scanning_only: true

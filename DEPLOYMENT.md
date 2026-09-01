@@ -13,6 +13,7 @@
 - EC2 instance launch permissions
 - Elastic IP allocation permissions
 - Security group creation permissions
+- KMS permissions for DNSSEC signing
 
 ### Domain
 - paleon-lab-saas.dev must be available
@@ -51,13 +52,14 @@ Terraform will provision:
 - EC2 instance (Ubuntu 24.04 t3.micro)
 - Security group (ports 80, 443 public; 22 restricted)
 - Elastic IP
-- Route53 hosted zone
+- Route53 hosted zone with DNSSEC enabled
 - DNS records (A records for main/app/dev, CNAME for legacy)
+- CAA record for Let's Encrypt
 - Email security records (SPF, DMARC)
 
 Note the outputs:
 - `instance_public_ip` — Elastic IP address
-- `name_servers` — Route53 NS records
+- `route53_nameservers` — Route53 NS records
 
 ## Step 3: Delegate DNS
 
@@ -100,7 +102,7 @@ Or copy files directly:
 scp -i ~/.ssh/your-key.pem -r . ubuntu@<elastic-ip>:~/site3/
 ```
 
-## Step 6: Deploy Application
+## Step 6: Deploy Application (HTTP Bootstrap)
 
 On the EC2 instance:
 
@@ -109,43 +111,66 @@ sudo ./scripts/deploy.sh
 ```
 
 This script will:
-- Install Nginx, Node.js, certbot
+- Install Nginx, Node.js, certbot, dnsutils
 - Create web root directories
 - Deploy main site HTML
-- Deploy app site HTML + exposed files
+- Deploy app site HTML + exposed files (individually, not wildcard)
 - Generate .git artifacts
-- Deploy Nginx configuration
-- Install dev Node application
+- Deploy Nginx **HTTP-only bootstrap** configuration
+- Install dev Node application with Express 4.17.1
 - Create systemd service for dev app
-- Validate and start Nginx
+- Validate and start Nginx on port 80
 
-## Step 7: Setup TLS
+**Key behavior:** The script detects whether TLS certificates exist. On first run, it deploys HTTP-only configs that reference no certificate paths, allowing Nginx to start successfully.
 
-On the EC2 instance:
+## Step 7: Verify HTTP Bootstrap
+
+From your local machine:
+
+```bash
+# Check HTTP endpoints work
+curl -I http://paleon-lab-saas.dev
+curl -I http://app.paleon-lab-saas.dev
+curl -I http://dev.paleon-lab-saas.dev
+
+# Verify exposed files are accessible via HTTP
+curl http://app.paleon-lab-saas.dev/.env
+curl http://app.paleon-lab-saas.dev/.git/config
+curl http://app.paleon-lab-saas.dev/openapi.json
+```
+
+## Step 8: Setup TLS
+
+On the EC2 instance, after DNS is fully propagated:
 
 ```bash
 sudo ./scripts/setup-ssl.sh
 ```
 
 This script will:
+- Verify DNS resolution using dig/nslookup/getent (fallback chain)
 - Request Let's Encrypt certificate for all three hosts
-- Configure Nginx HTTPS sites
+- Deploy **final HTTPS Nginx configurations** with HTTP→HTTPS redirects
 - Reload Nginx
+- Enable automatic certificate renewal
 
-**Note:** This requires DNS to be fully propagated first.
+The final configs include:
+- HTTP (port 80) → HTTPS (port 443) redirects
+- TLS certificate references
+- Full security headers
+- Intentional Permissions-Policy omission on app host only
 
-## Step 8: Verify Deployment
+## Step 9: Verify HTTPS Deployment
 
 ### External Verification
 
 From your local machine:
 
 ```bash
-# Check main site
+# Check HTTPS endpoints
 curl -I https://paleon-lab-saas.dev
-
-# Check app site
 curl -I https://app.paleon-lab-saas.dev
+curl -I https://dev.paleon-lab-saas.dev
 
 # Check exposed .env
 curl https://app.paleon-lab-saas.dev/.env
@@ -157,14 +182,13 @@ curl https://app.paleon-lab-saas.dev/.git/HEAD
 # Check OpenAPI
 curl https://app.paleon-lab-saas.dev/openapi.json
 
-# Check dev site
-curl -I https://dev.paleon-lab-saas.dev
-
 # Check Express version disclosure
 curl -I https://dev.paleon-lab-saas.dev | grep X-Powered-By
+# Should show: X-Powered-By: Express/4.17.1
 
 # Check legacy DNS
 dig legacy.paleon-lab-saas.dev CNAME +short
+# Should show: legacy-placeholder.example.invalid
 ```
 
 ### Security Headers Verification
@@ -173,8 +197,11 @@ dig legacy.paleon-lab-saas.dev CNAME +short
 # Main site — should have Permissions-Policy
 curl -I https://paleon-lab-saas.dev | grep -i permissions-policy
 
-# App site — should NOT have Permissions-Policy
+# App site — should NOT have Permissions-Policy (intentionally omitted)
 curl -I https://app.paleon-lab-saas.dev | grep -i permissions-policy
+
+# Dev site — should have Permissions-Policy
+curl -I https://dev.paleon-lab-saas.dev | grep -i permissions-policy
 ```
 
 ### TLS Verification
@@ -200,7 +227,7 @@ sudo tail -f /var/log/nginx/error.log
 sudo journalctl -u signaldesk-dev -f
 ```
 
-## Step 9: Run Validation
+## Step 10: Run Validation
 
 On the EC2 instance:
 
@@ -213,7 +240,7 @@ This checks:
 - JSON files parse correctly
 - Nginx configuration is valid
 - Dev app package.json is valid
-- Express version matches expected outdated version
+- Express version matches expected outdated version (4.17.1)
 - No private keys committed
 - Scripts are executable
 
@@ -228,8 +255,9 @@ sudo ./reset.sh
 This will:
 - Stop services
 - Clear deployed content
-- Redeploy fresh content
+- Redeploy fresh content (using individual file copies, not wildcards)
 - Recreate exposed .git artifacts
+- Detect TLS certificates and deploy appropriate configs (HTTP or HTTPS)
 - Restart services
 
 **Note:** This does NOT destroy Terraform infrastructure.
@@ -238,25 +266,32 @@ This will:
 
 ### DNS Not Resolving
 - Verify NS delegation at registrar
-- Wait longer for propagation
+- Wait longer for propagation (can take up to 48 hours)
 - Check Route53 hosted zone records
 
 ### Let's Encrypt Fails
 - Ensure DNS resolves correctly first
 - Check ports 80/443 are open in security group
 - Verify domain matches Nginx server_name
+- Check Nginx is running and serving HTTP before running setup-ssl.sh
+
+### Nginx Fails to Start on Fresh Instance
+- This should NOT happen if using the corrected bootstrap flow
+- deploy.sh now installs HTTP-only configs first when certificates don't exist
+- Only after setup-ssl.sh obtains certificates are HTTPS configs deployed
 
 ### Exposed Files Not Accessible
 - Check Nginx configuration deployed correctly
-- Verify files exist in /var/www/app/
+- Verify files exist in /var/www/app/ (not .env.example-exposed)
 - Check Nginx error logs
-- Ensure dotfiles are not blocked on app host
+- Ensure dotfiles are allowed on app host only
 
 ### Dev App Not Running
 - Check systemd service: `sudo systemctl status signaldesk-dev`
 - Check logs: `sudo journalctl -u signaldesk-dev -n 50`
 - Verify Node.js installed
-- Verify package.json and node_modules exist
+- Verify package.json and package-lock.json exist
+- Check npm ci succeeded
 
 ### Wrong Security Headers
 - Check which Nginx configuration is active
@@ -264,12 +299,22 @@ This will:
 - Ensure app site specifically omits Permissions-Policy
 - Force reload: `sudo nginx -s reload`
 
+### Express Version Not Visible
+- The dev app now explicitly sets: `X-Powered-By: Express/4.17.1`
+- Check with: `curl -I https://dev.paleon-lab-saas.dev | grep X-Powered-By`
+- If not visible, check dev app is running and Nginx is proxying correctly
+
 ## Teardown
 
 To completely remove the infrastructure:
 
 ```bash
+# Disable DNSSEC first (if enabled)
 cd infrastructure
+terraform destroy -target=aws_route53_dnssec.site3
+terraform destroy -target=aws_route53_key_signing_key.site3
+
+# Then destroy everything else
 terraform destroy
 ```
 
@@ -278,6 +323,7 @@ This will delete:
 - Elastic IP
 - Security group
 - Route53 hosted zone and all records
+- DNSSEC signing configuration
 
 **Warning:** This is destructive and cannot be undone.
 
@@ -288,3 +334,20 @@ This will delete:
 - All exposed credentials are fake placeholders
 - The site is for authorized scanner validation only
 - No real customer data or production secrets exist
+- DNSSEC is enabled for zone integrity
+- CAA records restrict certificate issuance to Let's Encrypt only
+
+## Deployment Sequence Summary
+
+1. Configure terraform.tfvars with your AWS settings
+2. Run `terraform apply` in infrastructure/
+3. Delegate Route53 nameservers at registrar
+4. Wait for DNS propagation
+5. SSH to EC2 instance
+6. Clone/copy repository to instance
+7. Run `sudo ./scripts/deploy.sh` (HTTP bootstrap)
+8. Verify HTTP endpoints work
+9. Run `sudo ./scripts/setup-ssl.sh` (TLS setup + HTTPS configs)
+10. Verify HTTPS and scanner-visible findings
+11. Run `./validate.sh` for local checks
+12. Use `sudo ./reset.sh` to restore known state if needed

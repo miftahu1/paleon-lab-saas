@@ -18,17 +18,17 @@ WARN=0
 # Helper functions
 pass() {
     echo -e "${GREEN}✓${NC} $1"
-    ((PASS++))
+    PASS=$((PASS + 1))
 }
 
 fail() {
     echo -e "${RED}✗${NC} $1"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
 }
 
 warn() {
     echo -e "${YELLOW}⚠${NC} $1"
-    ((WARN++))
+    WARN=$((WARN + 1))
 }
 
 # Determine repository root
@@ -52,11 +52,15 @@ required_files=(
     "website/app/openapi.json"
     "website/dev/index.html"
     "website/dev/package.json"
+    "website/dev/package-lock.json"
     "website/dev/server.js"
     "nginx/security-headers.conf"
     "nginx/main-site.conf"
     "nginx/app-site.conf"
     "nginx/dev-site.conf"
+    "nginx/main-site-http.conf"
+    "nginx/app-site-http.conf"
+    "nginx/dev-site-http.conf"
     "scripts/deploy.sh"
     "scripts/setup-ssl.sh"
     "infrastructure/main.tf"
@@ -112,6 +116,7 @@ echo "Validating JSON files..."
 json_files=(
     "website/app/openapi.json"
     "website/dev/package.json"
+    "website/dev/package-lock.json"
 )
 
 for json_file in "${json_files[@]}"; do

@@ -19,29 +19,67 @@
         }
         header {
             border-bottom: 1px solid #e5e5e5;
-            padding: 1.5rem 2rem;
+            padding: 1.25rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         .brand {
             font-size: 1.5rem;
             font-weight: 600;
             color: #0066cc;
+            letter-spacing: -0.02em;
         }
-        .hero {
-            max-width: 800px;
-            margin: 4rem auto;
-            padding: 0 2rem;
-            text-align: center;
+        nav {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
         }
-        .hero h1 {
-            font-size: 2.5rem;
-            font-weight: 700;
+        nav a {
+            color: #4a4a4a;
+            text-decoration: none;
+            font-size: 0.9375rem;
+            font-weight: 500;
+        }
+        nav a:hover {
+            color: #0066cc;
+        }
+        nav a.cta-link {
+            color: #0066cc;
+        }
+        .hero-section {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 4rem 2rem 5rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            align-items: center;
+        }
+        .hero-content {
+            max-width: 520px;
+        }
+        .eyebrow {
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #0066cc;
             margin-bottom: 1rem;
-            color: #1a1a1a;
         }
-        .hero p {
-            font-size: 1.25rem;
+        .hero-content h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            line-height: 1.1;
+            margin-bottom: 1.25rem;
+            color: #1a1a1a;
+            letter-spacing: -0.02em;
+        }
+        .hero-content p {
+            font-size: 1.125rem;
             color: #4a4a4a;
             margin-bottom: 2rem;
+            line-height: 1.7;
         }
         .cta-button {
             display: inline-block;
@@ -51,20 +89,85 @@
             border-radius: 6px;
             text-decoration: none;
             font-weight: 500;
+            font-size: 1rem;
             transition: background 0.2s;
         }
         .cta-button:hover {
             background: #0052a3;
         }
-        .features {
-            max-width: 1000px;
-            margin: 4rem auto;
-            padding: 0 2rem;
+        .workspace-snapshot {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
+        }
+        .snapshot-header {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #6a6a6a;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1.5rem;
+        }
+        .stats-row {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .stat-box {
+            background: #ffffff;
+            padding: 1.25rem 1rem;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 1.875rem;
+            font-weight: 700;
+            color: #1a1a1a;
+            display: block;
+        }
+        .stat-label {
+            font-size: 0.8125rem;
+            color: #6a6a6a;
+            margin-top: 0.25rem;
+        }
+        .snapshot-footer {
+            font-size: 0.8125rem;
+            color: #6a6a6a;
+            text-align: center;
+            padding-top: 1rem;
+            border-top: 1px solid #e5e7eb;
+        }
+        .features {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 4rem 2rem;
+            background: #fafafa;
+        }
+        .features-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        .features-header h2 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            color: #1a1a1a;
+        }
+        .features-header p {
+            font-size: 1.125rem;
+            color: #4a4a4a;
+        }
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 2rem;
         }
         .feature-card {
+            background: #ffffff;
             padding: 2rem;
             border: 1px solid #e5e5e5;
             border-radius: 8px;
@@ -73,16 +176,18 @@
             font-size: 1.25rem;
             margin-bottom: 0.75rem;
             color: #1a1a1a;
+            font-weight: 600;
         }
         .feature-card p {
             color: #4a4a4a;
+            line-height: 1.7;
         }
         footer {
             border-top: 1px solid #e5e5e5;
-            padding: 2rem;
+            padding: 2.5rem 2rem;
             text-align: center;
             color: #6a6a6a;
-            margin-top: 4rem;
+            background: #ffffff;
         }
         footer a {
             color: #0066cc;
@@ -91,14 +196,28 @@
         footer a:hover {
             text-decoration: underline;
         }
-        @media (max-width: 640px) {
-            .hero h1 {
-                font-size: 2rem;
+        @media (max-width: 768px) {
+            .hero-section {
+                grid-template-columns: 1fr;
+                gap: 2.5rem;
+                padding: 3rem 1.5rem;
             }
-            .hero p {
-                font-size: 1.125rem;
+            .hero-content h1 {
+                font-size: 2.25rem;
+            }
+            .workspace-snapshot {
+                order: -1;
+            }
+            nav {
+                gap: 1.5rem;
+            }
+            nav a:not(.cta-link) {
+                display: none;
             }
             .features {
+                padding: 3rem 1.5rem;
+            }
+            .features-grid {
                 grid-template-columns: 1fr;
             }
         }
@@ -107,30 +226,59 @@
 <body>
     <header>
         <div class="brand">SignalDesk</div>
+        <nav>
+            <a href="#features">Product</a>
+            <a href="https://app.paleon-lab-saas.dev" class="cta-link">Sign in</a>
+        </nav>
     </header>
 
-    <main>
-        <section class="hero">
-            <h1>Workflow tools that stay out of your way</h1>
-            <p>SignalDesk helps small teams track work, coordinate tasks, and stay aligned without the overhead of enterprise software.</p>
+    <section class="hero-section">
+        <div class="hero-content">
+            <div class="eyebrow">Workflow for Small Teams</div>
+            <h1>Stay aligned without the overhead</h1>
+            <p>SignalDesk helps small teams track work, coordinate tasks, and stay in sync without enterprise complexity.</p>
             <a href="https://app.paleon-lab-saas.dev" class="cta-button">Get Started</a>
-        </section>
+        </div>
+        <div class="workspace-snapshot">
+            <div class="snapshot-header">Your Workspace</div>
+            <div class="stats-row">
+                <div class="stat-box">
+                    <span class="stat-value">12</span>
+                    <div class="stat-label">Active Tasks</div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-value">5</span>
+                    <div class="stat-label">Team Members</div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-value">3</span>
+                    <div class="stat-label">Pending Reviews</div>
+                </div>
+            </div>
+            <div class="snapshot-footer">Real-time collaboration that just works</div>
+        </div>
+    </section>
 
-        <section class="features">
+    <section class="features" id="features">
+        <div class="features-header">
+            <h2>Built for how small teams work</h2>
+            <p>The essential tools without the complexity</p>
+        </div>
+        <div class="features-grid">
             <div class="feature-card">
                 <h3>Task Coordination</h3>
-                <p>Simple task management that helps your team stay in sync without micromanagement.</p>
+                <p>Simple task management that helps your team stay in sync without micromanagement. Track progress and priorities at a glance.</p>
             </div>
             <div class="feature-card">
                 <h3>Team Signals</h3>
-                <p>Lightweight status updates and notifications so everyone knows what matters right now.</p>
+                <p>Lightweight status updates and notifications so everyone knows what matters right now. No noise, just clarity.</p>
             </div>
             <div class="feature-card">
                 <h3>Quick Integration</h3>
-                <p>Connect your existing tools via API. Start using SignalDesk in minutes, not weeks.</p>
+                <p>Connect your existing tools via API. Start using SignalDesk in minutes, not weeks. Works with what you already use.</p>
             </div>
-        </section>
-    </main>
+        </div>
+    </section>
 
     <footer>
         <p>&copy; 2026 SignalDesk. Built for small teams. <a href="https://app.paleon-lab-saas.dev">Sign in</a></p>

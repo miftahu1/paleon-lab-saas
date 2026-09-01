@@ -113,7 +113,7 @@ resource "aws_eip_association" "site3" {
   allocation_id = aws_eip.site3.id
 }
 
-# Route53 Hosted Zone
+# Route53 Hosted Zone with DNSSEC
 resource "aws_route53_zone" "site3" {
   name = var.domain_name
 
@@ -121,6 +121,20 @@ resource "aws_route53_zone" "site3" {
     Name = "paleon-site3-zone"
   }
 }
+
+# DNSSEC signing
+resource "aws_route53_key_signing_key" "site3" {
+  name = "site3-ksk"
+  hosted_zone_id = aws_route53_zone.site3.zone_id
+  key_management_service_arn = "arn:aws:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:key/alias/aws/route53"
+}
+
+resource "aws_route53_dnssec" "site3" {
+  hosted_zone_id = aws_route53_zone.site3.zone_id
+  depends_on = [aws_route53_key_signing_key.site3]
+}
+
+data "aws_caller_identity" "current" {}
 
 # A records
 resource "aws_route53_record" "main" {
@@ -155,6 +169,19 @@ resource "aws_route53_record" "legacy" {
   type    = "CNAME"
   ttl     = 300
   records = ["legacy-placeholder.example.invalid"]
+}
+
+# CAA record for Let's Encrypt
+resource "aws_route53_record" "caa" {
+  zone_id = aws_route53_zone.site3.zone_id
+  name    = var.domain_name
+  type    = "CAA"
+  ttl     = 300
+  records = [
+    "0 issue \"letsencrypt.org\"",
+    "0 issuewild \"letsencrypt.org\"",
+    "0 iodef \"mailto:admin@${var.domain_name}\""
+  ]
 }
 
 # SPF record (no-mail posture)

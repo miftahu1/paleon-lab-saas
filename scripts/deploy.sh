@@ -18,8 +18,9 @@ echo "==> Deploying Site 3 from $REPO_ROOT"
 
 # Install required packages if not present
 echo "==> Installing required packages..."
+export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y nginx nodejs npm certbot python3-certbot-nginx git curl ca-certificates
+apt-get install -y nginx nodejs npm certbot python3-certbot-nginx git curl ca-certificates dnsutils
 
 # Ensure Node.js 20 LTS is available (via NodeSource)
 if ! node --version | grep -q "v20"; then
@@ -34,12 +35,13 @@ mkdir -p /var/www/main /var/www/app /var/www/dev
 
 # Deploy main site
 echo "==> Deploying main site..."
-cp -r "$REPO_ROOT/website/main/"* /var/www/main/
+cp "$REPO_ROOT/website/main/index.html" /var/www/main/
 chown -R www-data:www-data /var/www/main
 
-# Deploy app site
+# Deploy app site (copy files individually to avoid .env.example-exposed)
 echo "==> Deploying app site..."
-cp -r "$REPO_ROOT/website/app/"* /var/www/app/
+cp "$REPO_ROOT/website/app/index.html" /var/www/app/
+cp "$REPO_ROOT/website/app/openapi.json" /var/www/app/
 
 # Copy the exposed .env file (rename from .env.example-exposed to .env)
 cp "$REPO_ROOT/website/app/.env.example-exposed" /var/www/app/.env
@@ -72,12 +74,15 @@ chown -R www-data:www-data /var/www/app
 
 # Deploy dev app
 echo "==> Deploying dev app..."
-cp -r "$REPO_ROOT/website/dev/"* /var/www/dev/
+cp "$REPO_ROOT/website/dev/index.html" /var/www/dev/
+cp "$REPO_ROOT/website/dev/package.json" /var/www/dev/
+cp "$REPO_ROOT/website/dev/package-lock.json" /var/www/dev/
+cp "$REPO_ROOT/website/dev/server.js" /var/www/dev/
 
-# Install dev app dependencies
+# Install dev app dependencies using lockfile
 echo "==> Installing dev app dependencies..."
 cd /var/www/dev
-npm install --production
+npm ci --production
 
 chown -R www-data:www-data /var/www/dev
 
@@ -108,11 +113,21 @@ systemctl enable signaldesk-dev.service
 # Deploy Nginx configuration
 echo "==> Deploying Nginx configuration..."
 cp "$REPO_ROOT/nginx/security-headers.conf" /etc/nginx/security-headers.conf
-cp "$REPO_ROOT/nginx/main-site.conf" /etc/nginx/sites-available/main-site.conf
-cp "$REPO_ROOT/nginx/app-site.conf" /etc/nginx/sites-available/app-site.conf
-cp "$REPO_ROOT/nginx/dev-site.conf" /etc/nginx/sites-available/dev-site.conf
 
-# Enable sites (HTTP only initially, TLS setup comes from setup-ssl.sh)
+# Check if TLS certificates exist
+if [[ -f /etc/letsencrypt/live/paleon-lab-saas.dev/fullchain.pem ]]; then
+    echo "==> TLS certificates found, deploying HTTPS configs..."
+    cp "$REPO_ROOT/nginx/main-site.conf" /etc/nginx/sites-available/main-site.conf
+    cp "$REPO_ROOT/nginx/app-site.conf" /etc/nginx/sites-available/app-site.conf
+    cp "$REPO_ROOT/nginx/dev-site.conf" /etc/nginx/sites-available/dev-site.conf
+else
+    echo "==> No TLS certificates found, deploying HTTP-only bootstrap configs..."
+    cp "$REPO_ROOT/nginx/main-site-http.conf" /etc/nginx/sites-available/main-site.conf
+    cp "$REPO_ROOT/nginx/app-site-http.conf" /etc/nginx/sites-available/app-site.conf
+    cp "$REPO_ROOT/nginx/dev-site-http.conf" /etc/nginx/sites-available/dev-site.conf
+fi
+
+# Enable sites
 ln -sf /etc/nginx/sites-available/main-site.conf /etc/nginx/sites-enabled/
 ln -sf /etc/nginx/sites-available/app-site.conf /etc/nginx/sites-enabled/
 ln -sf /etc/nginx/sites-available/dev-site.conf /etc/nginx/sites-enabled/
@@ -136,9 +151,11 @@ systemctl is-active --quiet signaldesk-dev && echo "✓ Dev app is running" || e
 
 echo "==> Deployment complete!"
 echo ""
-echo "Next steps:"
-echo "1. Ensure DNS is propagated (dig paleon-lab-saas.dev)"
-echo "2. Run ./scripts/setup-ssl.sh to configure TLS"
+if [[ ! -f /etc/letsencrypt/live/paleon-lab-saas.dev/fullchain.pem ]]; then
+    echo "Next steps:"
+    echo "1. Ensure DNS is propagated (dig paleon-lab-saas.dev)"
+    echo "2. Run ./scripts/setup-ssl.sh to configure TLS"
+fi
 echo ""
 echo "Service status:"
 echo "  sudo systemctl status nginx"

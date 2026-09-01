@@ -4,6 +4,12 @@ const path = require('path');
 const app = express();
 const PORT = 3000;
 
+// Explicitly set X-Powered-By header with version
+app.use((req, res, next) => {
+  res.setHeader('X-Powered-By', 'Express/4.17.1');
+  next();
+});
+
 // Serve the static HTML file
 app.use(express.static(__dirname));
 
