@@ -1,0 +1,12 @@
+# AWS Region
+aws_region = "us-east-1"
+
+# Domain name
+domain_name = "paleon-lab-saas.dev"
+
+# SSH key name (must exist in AWS)
+ssh_key_name = "your-key-name"
+
+# Admin IP CIDR for SSH access (use your IP with /32)
+# Example: "203.0.113.50/32"
+admin_ip_cidr = "YOUR.IP.ADDRESS/32"

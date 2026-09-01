@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Development Environment — SignalDesk</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+            line-height: 1.6;
+            color: #d4d4d4;
+            background: #1e1e1e;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 2rem;
+            color: #4ec9b0;
+            font-weight: normal;
+        }
+        .panel {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .panel h2 {
+            font-size: 1rem;
+            color: #9cdcfe;
+            margin-bottom: 1rem;
+            font-weight: normal;
+        }
+        .status-line {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #3e3e42;
+        }
+        .status-line:last-child {
+            border-bottom: none;
+        }
+        .label {
+            color: #858585;
+        }
+        .value {
+            color: #d4d4d4;
+        }
+        .value.ok {
+            color: #4ec9b0;
+        }
+        .footer {
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid #3e3e42;
+            color: #858585;
+            font-size: 0.875rem;
+        }
+        a {
+            color: #569cd6;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SignalDesk Development Environment</h1>
+
+        <div class="panel">
+            <h2>Service Status</h2>
+            <div class="status-line">
+                <span class="label">API Server</span>
+                <span class="value ok">running</span>
+            </div>
+            <div class="status-line">
+                <span class="label">Port</span>
+                <span class="value">3000</span>
+            </div>
+            <div class="status-line">
+                <span class="label">Environment</span>
+                <span class="value">development</span>
+            </div>
+            <div class="status-line">
+                <span class="label">Uptime</span>
+                <span class="value">2h 14m</span>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>Endpoints</h2>
+            <div class="status-line">
+                <span class="label">GET /</span>
+                <span class="value ok">200</span>
+            </div>
+            <div class="status-line">
+                <span class="label">GET /health</span>
+                <span class="value ok">200</span>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>This is a development environment. For production, visit <a href="https://app.paleon-lab-saas.dev">app.paleon-lab-saas.dev</a></p>
+        </div>
+    </div>
+</body>
+</html>

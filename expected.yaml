@@ -1,0 +1,285 @@
+# Expected Scanner Findings — Site 3
+# Paleon Test Site: paleon-lab-saas.dev
+# Site Type: Early-stage B2B SaaS
+# Test Pattern: Dev environment / source / secret exposure
+
+site:
+  name: "Site 3 - B2B SaaS"
+  domain: "paleon-lab-saas.dev"
+  type: "early_stage_saas"
+  pattern: "dev_environment_exposure"
+
+hosts:
+  - hostname: "paleon-lab-saas.dev"
+    purpose: "main_marketing_site"
+    intentional_findings: []
+    notes: "Secure baseline with full security headers including Permissions-Policy"
+
+  - hostname: "app.paleon-lab-saas.dev"
+    purpose: "application_host"
+    intentional_findings:
+      - exposed_git
+      - exposed_env
+      - exposed_openapi
+      - missing_permissions_policy
+    notes: "Primary exposure host with intentional dotfile leakage"
+
+  - hostname: "dev.paleon-lab-saas.dev"
+    purpose: "development_environment"
+    intentional_findings:
+      - outdated_dependency_version
+      - dev_subdomain_discovery
+    notes: "Node/Express app with version disclosure"
+
+  - hostname: "legacy.paleon-lab-saas.dev"
+    purpose: "dns_only_indicator"
+    intentional_findings:
+      - subdomain_takeover_indicator
+    notes: "DNS-only, not a confirmed takeover"
+
+findings:
+  - id: "exposed-git-directory"
+    category: "exposed_files"
+    severity: "high"
+    claim_strength: "observed"
+    description: "Git repository metadata exposed on app host"
+    evidence:
+      paths:
+        - "/.git/config"
+        - "/.git/HEAD"
+      method: "GET"
+      expected_status: 200
+    host: "app.paleon-lab-saas.dev"
+    verification:
+      - "curl https://app.paleon-lab-saas.dev/.git/config should return Git config"
+      - "curl https://app.paleon-lab-saas.dev/.git/HEAD should return ref: refs/heads/main"
+    notes: "Intentional exposure contains no real secrets, synthetic repository reference only"
+
+  - id: "exposed-env-file"
+    category: "exposed_files"
+    severity: "high"
+    claim_strength: "observed"
+    description: "Environment configuration file with credentials exposed"
+    evidence:
+      path: "/.env"
+      method: "GET"
+      expected_status: 200
+      contains:
+        - "DATABASE_URL"
+        - "API_KEY"
+        - "JWT_SECRET"
+        - "AWS_ACCESS_KEY_ID"
+    host: "app.paleon-lab-saas.dev"
+    verification:
+      - "curl https://app.paleon-lab-saas.dev/.env should return config file"
+    notes: "All values are fake placeholders (demo:demo@db.example.invalid, etc.)"
+
+  - id: "exposed-openapi-spec"
+    category: "exposed_files"
+    severity: "medium"
+    claim_strength: "observed"
+    description: "OpenAPI specification publicly accessible"
+    evidence:
+      path: "/openapi.json"
+      method: "GET"
+      expected_status: 200
+      content_type: "application/json"
+    host: "app.paleon-lab-saas.dev"
+    verification:
+      - "curl https://app.paleon-lab-saas.dev/openapi.json should return valid OpenAPI 3.x JSON"
+    notes: "Describes synthetic API endpoints, no backend implementation exists"
+
+  - id: "dev-subdomain-discovery"
+    category: "subdomain_discovery"
+    severity: "low"
+    claim_strength: "observed"
+    description: "Development environment subdomain is publicly accessible"
+    evidence:
+      hostname: "dev.paleon-lab-saas.dev"
+      method: "GET"
+      expected_status: 200
+    host: "dev.paleon-lab-saas.dev"
+    verification:
+      - "curl -I https://dev.paleon-lab-saas.dev should return 200"
+      - "DNS lookup for dev.paleon-lab-saas.dev should resolve"
+    notes: "Development environment running real Express application"
+
+  - id: "outdated-express-version"
+    category: "outdated_software"
+    severity: "medium"
+    claim_strength: "detected"
+    description: "Outdated Express.js version disclosed via response headers"
+    evidence:
+      header: "X-Powered-By"
+      value: "Express"
+      version: "4.17.1"
+      method: "GET"
+      path: "/"
+    host: "dev.paleon-lab-saas.dev"
+    verification:
+      - "curl -I https://dev.paleon-lab-saas.dev | grep X-Powered-By should show Express"
+    notes: "Real outdated dependency (Express 4.17.1 released 2019), not a CVE claim"
+
+  - id: "subdomain-takeover-indicator"
+    category: "subdomain_takeover"
+    severity: "medium"
+    claim_strength: "indicator"
+    description: "Subdomain CNAME points to potentially unclaimed resource"
+    evidence:
+      hostname: "legacy.paleon-lab-saas.dev"
+      record_type: "CNAME"
+      target: "legacy-placeholder.example.invalid"
+      method: "DNS"
+    host: "legacy.paleon-lab-saas.dev"
+    verification:
+      - "dig legacy.paleon-lab-saas.dev CNAME should return legacy-placeholder.example.invalid"
+    notes: "INDICATOR ONLY - not a confirmed takeover, safe placeholder target"
+
+  - id: "missing-permissions-policy"
+    category: "security_headers"
+    severity: "low"
+    claim_strength: "observed"
+    description: "Permissions-Policy header missing on app host"
+    evidence:
+      header: "Permissions-Policy"
+      expected: "absent"
+      method: "GET"
+      path: "/"
+    host: "app.paleon-lab-saas.dev"
+    verification:
+      - "curl -I https://app.paleon-lab-saas.dev | grep -i permissions-policy should be empty"
+      - "curl -I https://paleon-lab-saas.dev | grep -i permissions-policy should be present (baseline)"
+    notes: "Intentionally omitted on app host only, present on main and dev hosts"
+
+must_not_flag:
+  - category: "confirmed_cve_exploitation"
+    reason: "No CVE exploitation occurs, outdated version is disclosed but not exploited"
+
+  - category: "confirmed_subdomain_takeover"
+    reason: "Legacy subdomain is an indicator only, not a confirmed claimable takeover"
+
+  - category: "real_credentials"
+    reason: "All exposed credentials are synthetic placeholders (example.invalid domains)"
+
+  - category: "sql_injection"
+    reason: "No database exists, no forms exist, no dynamic queries occur"
+
+  - category: "xss"
+    reason: "Static HTML only on main/app hosts, no user input processing"
+
+  - category: "authentication_bypass"
+    reason: "No authentication system exists"
+
+  - category: "ssrf"
+    reason: "No proxy functionality, no URL parameter handling, no server-side requests"
+
+  - category: "database_exposure"
+    reason: "No database server exists"
+
+  - category: "unnecessary_open_ports"
+    reason: "Only 80, 443 public; 22 restricted to admin IP"
+
+  - category: "weak_tls"
+    reason: "Valid Let's Encrypt TLS with modern configuration"
+
+  - category: "email_security_weakness"
+    reason: "SPF -all and DMARC p=reject configured (no-mail posture)"
+
+security_posture:
+  tls:
+    provider: "Let's Encrypt"
+    hosts:
+      - "paleon-lab-saas.dev"
+      - "app.paleon-lab-saas.dev"
+      - "dev.paleon-lab-saas.dev"
+    notes: "Valid trusted certificates, hostname matches, modern TLS configuration"
+
+  security_headers:
+    main_host:
+      - "Strict-Transport-Security"
+      - "X-Content-Type-Options"
+      - "X-Frame-Options"
+      - "Referrer-Policy"
+      - "Content-Security-Policy"
+      - "Permissions-Policy"
+    app_host:
+      - "Strict-Transport-Security"
+      - "X-Content-Type-Options"
+      - "X-Frame-Options"
+      - "Referrer-Policy"
+      - "Content-Security-Policy"
+      # Permissions-Policy intentionally missing
+    dev_host:
+      - "Strict-Transport-Security"
+      - "X-Content-Type-Options"
+      - "X-Frame-Options"
+      - "Referrer-Policy"
+      - "Content-Security-Policy"
+      - "Permissions-Policy"
+
+  network:
+    open_ports:
+      - port: 80
+        purpose: "HTTP (redirects to HTTPS)"
+        access: "0.0.0.0/0"
+      - port: 443
+        purpose: "HTTPS"
+        access: "0.0.0.0/0"
+      - port: 22
+        purpose: "SSH (admin only)"
+        access: "restricted_to_admin_ip"
+    notes: "No unnecessary ports exposed"
+
+  email:
+    spf: "v=spf1 -all"
+    dmarc: "v=DMARC1; p=reject;"
+    notes: "No-mail posture, no DKIM, no mail servers"
+
+scanner_capabilities:
+  can_detect:
+    - "Exposed dotfiles via HTTP GET requests"
+    - "Exposed configuration files"
+    - "Exposed API documentation"
+    - "Subdomain enumeration via DNS"
+    - "Version disclosure in HTTP headers"
+    - "DNS CNAME records"
+    - "Missing security headers"
+    - "TLS certificate validation"
+
+  cannot_detect:
+    - "Exploitability of disclosed versions without active exploitation"
+    - "Credential validity without authentication attempts"
+    - "Application logic vulnerabilities without state-changing operations"
+    - "SQL injection without payload submission"
+    - "Authentication bypass without login attempts"
+
+validation_commands:
+  dns:
+    - "dig paleon-lab-saas.dev +short"
+    - "dig app.paleon-lab-saas.dev +short"
+    - "dig dev.paleon-lab-saas.dev +short"
+    - "dig legacy.paleon-lab-saas.dev CNAME +short"
+
+  http:
+    - "curl -I https://paleon-lab-saas.dev"
+    - "curl -I https://app.paleon-lab-saas.dev"
+    - "curl -I https://dev.paleon-lab-saas.dev"
+
+  exposures:
+    - "curl https://app.paleon-lab-saas.dev/.env"
+    - "curl https://app.paleon-lab-saas.dev/.git/config"
+    - "curl https://app.paleon-lab-saas.dev/.git/HEAD"
+    - "curl https://app.paleon-lab-saas.dev/openapi.json"
+
+  headers:
+    - "curl -I https://paleon-lab-saas.dev | grep -i permissions-policy"
+    - "curl -I https://app.paleon-lab-saas.dev | grep -i permissions-policy"
+    - "curl -I https://dev.paleon-lab-saas.dev | grep -i 'X-Powered-By'"
+
+  tls:
+    - "echo | openssl s_client -connect paleon-lab-saas.dev:443 -servername paleon-lab-saas.dev 2>/dev/null | openssl x509 -noout -subject -dates"
+
+deployment_date: "2026-09-01"
+last_validated: "2026-09-01"
+test_environment: true
+authorized_scanning_only: true
