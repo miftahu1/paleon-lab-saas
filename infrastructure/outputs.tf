@@ -13,6 +13,16 @@ output "route53_nameservers" {
   value       = aws_route53_zone.site3.name_servers
 }
 
+output "dnssec_kms_key_arn" {
+  description = "ARN of the customer-managed KMS key for DNSSEC"
+  value       = aws_kms_key.dnssec.arn
+}
+
+output "dnssec_status" {
+  description = "DNSSEC signing status"
+  value       = "enabled"
+}
+
 output "main_url" {
   description = "Main site URL"
   value       = "https://${var.domain_name}"

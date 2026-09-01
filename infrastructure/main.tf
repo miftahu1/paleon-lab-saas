@@ -12,10 +12,16 @@ provider "aws" {
   region = var.aws_region
 }
 
+# Additional provider for us-east-1 (required for Route 53 DNSSEC KMS key)
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}
+
 # Lookup latest Ubuntu 24.04 AMD64 AMI
 data "aws_ami" "ubuntu_2404" {
   most_recent = true
-  owners      = ["099720109477"]  # Canonical
+  owners      = ["099720109477"] # Canonical
 
   filter {
     name   = "name"
@@ -91,11 +97,11 @@ resource "aws_eip" "site3" {
 
 # EC2 instance
 resource "aws_instance" "site3" {
-  ami                    = data.aws_ami.ubuntu_2404.id
-  instance_type          = "t3.micro"
-  key_name               = var.ssh_key_name
-  vpc_security_group_ids = [aws_security_group.site3.id]
-  associate_public_ip_address = false  # Use Elastic IP instead
+  ami                         = data.aws_ami.ubuntu_2404.id
+  instance_type               = "t3.micro"
+  key_name                    = var.ssh_key_name
+  vpc_security_group_ids      = [aws_security_group.site3.id]
+  associate_public_ip_address = false # Use Elastic IP instead
 
   user_data = filebase64("${path.module}/user_data.sh")
 
@@ -109,11 +115,83 @@ resource "aws_instance" "site3" {
 
 # Associate Elastic IP with instance
 resource "aws_eip_association" "site3" {
-  instance_id = aws_instance.site3.id
+  instance_id   = aws_instance.site3.id
   allocation_id = aws_eip.site3.id
 }
 
-# Route53 Hosted Zone with DNSSEC
+# Get current AWS account ID and partition
+data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
+
+# Customer-managed KMS key for Route 53 DNSSEC (MUST be in us-east-1)
+resource "aws_kms_key" "dnssec" {
+  provider = aws.us_east_1
+
+  customer_master_key_spec = "ECC_NIST_P256"
+  key_usage                = "SIGN_VERIFY"
+  deletion_window_in_days  = 7
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow Route 53 DNSSEC Service"
+        Effect = "Allow"
+        Principal = {
+          Service = "dnssec-route53.amazonaws.com"
+        }
+        Action = [
+          "kms:DescribeKey",
+          "kms:GetPublicKey",
+          "kms:Sign"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+        }
+      },
+      {
+        Sid    = "Allow Route 53 DNSSEC Service to CreateGrant"
+        Effect = "Allow"
+        Principal = {
+          Service = "dnssec-route53.amazonaws.com"
+        }
+        Action   = "kms:CreateGrant"
+        Resource = "*"
+        Condition = {
+          Bool = {
+            "kms:GrantIsForAWSResource" = "true"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "paleon-site3-dnssec-ksk"
+  }
+}
+
+# KMS key alias for easier identification
+resource "aws_kms_alias" "dnssec" {
+  provider = aws.us_east_1
+
+  name          = "alias/paleon-site3-dnssec"
+  target_key_id = aws_kms_key.dnssec.key_id
+}
+
+# Route53 Hosted Zone
 resource "aws_route53_zone" "site3" {
   name = var.domain_name
 
@@ -122,19 +200,18 @@ resource "aws_route53_zone" "site3" {
   }
 }
 
-# DNSSEC signing
+# DNSSEC Key Signing Key using customer-managed KMS key
+# Creating this resource enables DNSSEC for the hosted zone
 resource "aws_route53_key_signing_key" "site3" {
-  name = "site3-ksk"
-  hosted_zone_id = aws_route53_zone.site3.zone_id
-  key_management_service_arn = "arn:aws:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:key/alias/aws/route53"
+  hosted_zone_id             = aws_route53_zone.site3.zone_id
+  key_management_service_arn = aws_kms_key.dnssec.arn
+  name                       = "site3-ksk"
 }
 
-resource "aws_route53_dnssec" "site3" {
-  hosted_zone_id = aws_route53_zone.site3.zone_id
-  depends_on = [aws_route53_key_signing_key.site3]
+# Activate DNSSEC signing for the hosted zone
+resource "aws_route53_hosted_zone_dnssec" "site3" {
+  hosted_zone_id = aws_route53_key_signing_key.site3.hosted_zone_id
 }
-
-data "aws_caller_identity" "current" {}
 
 # A records
 resource "aws_route53_record" "main" {
