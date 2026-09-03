@@ -47,7 +47,7 @@ systemctl start nginx
 # Install Node.js 20 LTS (using NodeSource)
 log "Installing Node.js 20 LTS..."
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs npm
+apt-get install -y nodejs
 
 # Create web directories and state dir
 mkdir -p /var/www/main /var/www/app /var/www/dev

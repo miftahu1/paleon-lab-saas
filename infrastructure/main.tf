@@ -184,6 +184,10 @@ resource "aws_kms_key" "dnssec" {
   tags = {
     Name = "paleon-site3-dnssec-ksk"
   }
+
+  lifecycle {
+    ignore_changes = [deletion_window_in_days]
+  }
 }
 
 # KMS key alias for easier identification
