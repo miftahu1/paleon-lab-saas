@@ -118,7 +118,7 @@ log "==> Starting bootstrap deployment from $REPO_ROOT"
 log "==> Installing required packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y nginx nodejs npm certbot python3-certbot-nginx git curl ca-certificates dnsutils
+apt-get install -y nginx nodejs certbot python3-certbot-nginx git curl ca-certificates dnsutils
 
 # Ensure Node.js 20 LTS is available (via NodeSource)
 if ! node --version | grep -q "v20"; then
