@@ -10,3 +10,6 @@ ssh_key_name = "your-key-name"
 # Admin IP CIDR for SSH access (use your IP with /32)
 # Example: "203.0.113.50/32"
 admin_ip_cidr = "YOUR.IP.ADDRESS/32"
+
+# Public Git repository URL for site code (optional, has default)
+repo_url = "https://github.com/miftahu1/paleon-lab-saas.git"

@@ -25,7 +25,7 @@ data "aws_ami" "ubuntu_2404" {
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-noble-24.04-amd64-server-*"]
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
   }
 
   filter {
@@ -103,7 +103,10 @@ resource "aws_instance" "site3" {
   vpc_security_group_ids      = [aws_security_group.site3.id]
   associate_public_ip_address = false # Use Elastic IP instead
 
-  user_data = filebase64("${path.module}/user_data.sh")
+  user_data = templatefile("${path.module}/user_data.sh", {
+    repo_url    = var.repo_url
+    expected_ip = aws_eip.site3.public_ip
+  })
 
   tags = {
     Name = "paleon-site3-instance"
@@ -267,7 +270,7 @@ resource "aws_route53_record" "spf" {
   name    = var.domain_name
   type    = "TXT"
   ttl     = 300
-  records = ["\"v=spf1 -all\""]
+  records = ["v=spf1 -all"]
 }
 
 # DMARC record
@@ -276,5 +279,5 @@ resource "aws_route53_record" "dmarc" {
   name    = "_dmarc.${var.domain_name}"
   type    = "TXT"
   ttl     = 300
-  records = ["\"v=DMARC1; p=reject;\""]
+  records = ["v=DMARC1; p=reject;"]
 }

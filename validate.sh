@@ -63,6 +63,8 @@ required_files=(
     "nginx/dev-site-http.conf"
     "scripts/deploy.sh"
     "scripts/setup-ssl.sh"
+    "scripts/bootstrap-deploy.sh"
+    "scripts/tls-poll.sh"
     "infrastructure/main.tf"
     "infrastructure/variables.tf"
     "infrastructure/outputs.tf"
@@ -85,6 +87,8 @@ scripts=(
     "reset.sh"
     "scripts/deploy.sh"
     "scripts/setup-ssl.sh"
+    "scripts/bootstrap-deploy.sh"
+    "scripts/tls-poll.sh"
 )
 
 for script in "${scripts[@]}"; do

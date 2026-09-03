@@ -11,9 +11,9 @@ Site 3 is a minimal early-stage B2B SaaS test target designed to produce specifi
 
 Single AWS EC2 instance (Ubuntu 24.04, t3.micro) running:
 - Nginx as the public web server
-- Three HTTP hosts with valid TLS
+- Three HTTP hosts with valid TLS (automated via Let's Encrypt)
 - One tiny Node.js Express app on the dev subdomain
-- Route53 for authoritative DNS
+- Route53 for authoritative DNS with DNSSEC
 
 ## Hosts
 
@@ -46,26 +46,56 @@ The .env file intentionally exposes fake values. The .git exposure is intentiona
 
 ## Quick Start
 
+### Fully Automated Deployment (Recommended)
+
 ```bash
-# Validate locally
+# 1. Validate locally (optional)
 ./validate.sh
 
-# Deploy infrastructure
+# 2. Configure Terraform
 cd infrastructure
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your AWS key name and admin IP
+
+# 3. Deploy infrastructure + application (fully automated)
 terraform init
-terraform plan
 terraform apply
 
-# Deploy application
-./scripts/deploy.sh
+# 4. Delegate DNS at registrar to Route53 nameservers (from terraform output)
 
-# Setup TLS
-./scripts/setup-ssl.sh
+# 5. Wait for DNS propagation (5-30 min) - EC2 handles the rest automatically:
+#    - Clones repo and deploys HTTP bootstrap
+#    - Polls DNS every 5 min for up to 60 min
+#    - When DNS resolves: requests Let's Encrypt cert, deploys HTTPS configs
+#    - Check /var/log/tls-setup.log for status
 
-# Reset to known state
-./reset.sh
+# 6. Verify HTTPS endpoints (after TLS configured)
+curl -I https://paleon-lab-saas.dev
+curl -I https://app.paleon-lab-saas.dev
+curl -I https://dev.paleon-lab-saas.dev
+```
 
-# Teardown
+### Manual Override (If Needed)
+
+If automated TLS times out (60 min) or you want immediate control after DNS propagates:
+
+```bash
+# SSH to instance (or use AWS Session Manager)
+ssh -i ~/.ssh/your-key.pem ubuntu@<elastic-ip>
+
+# Run manual TLS setup
+sudo ./scripts/setup-ssl.sh --force
+```
+
+### Reset to Known State
+
+```bash
+sudo ./reset.sh
+```
+
+### Teardown
+
+```bash
 cd infrastructure
 terraform destroy
 ```
@@ -98,7 +128,9 @@ This is a controlled laboratory environment for authorized security scanner vali
 ## Documentation
 
 - `ARCHITECTURE.md` — Design decisions and host breakdown
-- `DEPLOYMENT.md` — Step-by-step deployment guide
+- `DEPLOYMENT.md` — Step-by-step deployment guide (automated + manual)
 - `expected.yaml` — Expected scanner findings
 - `validate.sh` — Local validation checks
 - `reset.sh` — Restore known state
+- `scripts/bootstrap-deploy.sh` — Shared deployment logic
+- `scripts/tls-poll.sh` — Automated TLS polling logic

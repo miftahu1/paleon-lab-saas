@@ -1,6 +1,7 @@
 #!/bin/bash
 # TLS setup script for Site 3
 # Must be run as root on the EC2 instance after DNS is propagated
+# Usage: setup-ssl.sh [--force]
 
 set -euo pipefail
 
@@ -9,6 +10,22 @@ if [[ $EUID -ne 0 ]]; then
    echo "Error: This script must be run as root"
    exit 1
 fi
+
+# Parse arguments
+FORCE=false
+for arg in "$@"; do
+    case $arg in
+        --force)
+            FORCE=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $arg"
+            echo "Usage: $0 [--force]"
+            exit 1
+            ;;
+    esac
+done
 
 # Determine repository root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,13 +36,24 @@ EMAIL="admin@${DOMAIN}"
 
 echo "==> Setting up TLS for Site 3"
 
+# If not forced, check if certificates already exist
+if [[ "$FORCE" == "false" ]] && [[ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
+    echo "TLS certificates already exist. Use --force to re-request."
+    exit 0
+fi
+
+# If forced, disable the automated polling timer to avoid conflicts
+# NOTE: do not disable site3-tls-poll.timer before attempting TLS setup.
+# The polling timer will be disabled by the caller (tls-poll.sh) or after
+# successful certificate issuance to ensure retries continue if setup fails.
+
 # Check DNS resolution before proceeding
 echo "==> Checking DNS resolution..."
 for subdomain in "" "app." "dev."; do
     hostname="${subdomain}${DOMAIN}"
     # Use nslookup as fallback if dig not available
     if command -v dig &> /dev/null; then
-        if ! dig +short "$hostname" | grep -q .; then
+        if ! dig +short "$hostname" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "Error: DNS not resolved for $hostname"
             echo "Please ensure DNS delegation is complete and propagated"
             exit 1
@@ -84,6 +112,10 @@ systemctl reload nginx
 echo "==> Setting up automatic certificate renewal..."
 systemctl enable certbot.timer
 systemctl start certbot.timer
+
+# Disable the automated polling timer now that TLS is configured
+systemctl disable --now site3-tls-poll.timer 2>/dev/null || true
+echo "==> Disabled site3-tls-poll.timer (TLS configured)"
 
 echo "==> TLS setup complete!"
 echo ""

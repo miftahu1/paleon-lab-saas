@@ -1,23 +1,36 @@
 # Deployment Guide — Site 3
 
+## Overview
+
+Site 3 now supports **fully automated deployment** via Terraform cloud-init. A single `terraform apply` provisions infrastructure, deploys the application, and automatically configures TLS once DNS propagates.
+
+### Deployment Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **Automated (default)** | Terraform apply → EC2 boots → auto-deploys HTTP → polls DNS → auto-configures TLS | Standard deployment |
+| **Manual override** | Run `setup-ssl.sh --force` anytime after DNS propagates | If automation times out or you want control |
+
+---
+
 ## Prerequisites
 
 ### Local Machine
 - Terraform >= 1.5
 - AWS CLI configured with appropriate credentials
-- SSH key pair for EC2 access
-- Git
 
 ### AWS Account
 - Route53 hosted zone capability
 - EC2 instance launch permissions
 - Elastic IP allocation permissions
 - Security group creation permissions
-- KMS permissions for DNSSEC signing
+- KMS permissions for DNSSEC signing (us-east-1)
 
 ### Domain
-- paleon-lab-saas.dev must be available
+- `paleon-lab-saas.dev` must be available
 - You will need to delegate NS records to Route53
+
+---
 
 ## Step 1: Configure Variables
 
@@ -35,9 +48,14 @@ aws_region        = "us-east-1"
 domain_name       = "paleon-lab-saas.dev"
 ssh_key_name      = "your-key-name"
 admin_ip_cidr     = "YOUR.IP.ADDRESS/32"
+# repo_url        = "https://github.com/your-org/your-repo.git"  # Optional, has default
 ```
 
 **IMPORTANT:** Set `admin_ip_cidr` to your actual IP address. SSH (port 22) will only be accessible from this address.
+
+The `repo_url` variable is optional and defaults to `https://github.com/miftahu1/paleon-lab-saas.git`. Override it if you host the repository elsewhere.
+
+---
 
 ## Step 2: Deploy Infrastructure
 
@@ -61,6 +79,8 @@ Note the outputs:
 - `instance_public_ip` — Elastic IP address
 - `route53_nameservers` — Route53 NS records
 
+---
+
 ## Step 3: Delegate DNS
 
 Take the Route53 name servers from terraform output and create NS records at your domain registrar:
@@ -72,7 +92,7 @@ paleon-lab-saas.dev NS ns-xxx.awsdns-xx.net.
 paleon-lab-saas.dev NS ns-xxx.awsdns-xx.co.uk.
 ```
 
-Wait for DNS propagation (typically 5-30 minutes):
+Wait for DNS propagation (typically 5-30 minutes, up to 48 hours max):
 
 ```bash
 dig paleon-lab-saas.dev +short
@@ -82,87 +102,53 @@ dig dev.paleon-lab-saas.dev +short
 
 All three should return the Elastic IP address.
 
-## Step 4: SSH to Instance
+---
+
+## Step 4: Automated Deployment (What Happens Next)
+
+**After DNS delegation, the EC2 instance automatically:**
+
+1. **First boot (cloud-init):**
+   - Clones the repository from `repo_url`
+   - Runs bootstrap deployment (installs packages, deploys content, creates services)
+   - Deploys **HTTP-only bootstrap Nginx configs** (no TLS certs yet)
+   - Starts nginx on port 80 and dev app on port 3000
+   - Creates a systemd timer (`site3-tls-poll.timer`) that fires every 5 minutes
+
+2. **TLS polling (every 5 min for up to 60 min):**
+   - Checks DNS resolution for all 3 hosts (`paleon-lab-saas.dev`, `app.`, `dev.`)
+   - When all 3 resolve to the EIP: requests Let's Encrypt certificate via certbot
+   - Deploys **final HTTPS Nginx configs** with HTTP→HTTPS redirects
+   - Reloads nginx, enables `certbot.timer` for auto-renewal
+   - Logs success to `/var/log/tls-setup.log`
+   - Disables the polling timer
+
+3. **If DNS doesn't propagate within 60 minutes:**
+   - Logs `TIMEOUT: DNS not propagated after 60 min. Run: sudo ./scripts/setup-ssl.sh` to `/var/log/tls-setup.log`
+   - Disables the polling timer
+   - HTTP bootstrap continues running on port 80
+   - **You can manually complete TLS:** Run `sudo ./scripts/setup-ssl.sh` anytime after DNS propagates
+
+---
+
+## Step 5: Verify Deployment
+
+### Check Automation Status
+
+On the EC2 instance (SSH optional - for monitoring only):
 
 ```bash
-ssh -i ~/.ssh/your-key.pem ubuntu@<elastic-ip>
+# Check TLS setup log
+cat /var/log/tls-setup.log
+
+# Watch timer activity
+sudo journalctl -u site3-tls-poll.service -f
+
+# Check timer status
+systemctl list-timers | grep site3
 ```
 
-## Step 5: Clone Repository on Instance
-
-```bash
-git clone https://github.com/your-org/paleon-test-site3.git
-cd paleon-test-site3
-```
-
-Or copy files directly:
-
-```bash
-# From local machine
-scp -i ~/.ssh/your-key.pem -r . ubuntu@<elastic-ip>:~/site3/
-```
-
-## Step 6: Deploy Application (HTTP Bootstrap)
-
-On the EC2 instance:
-
-```bash
-sudo ./scripts/deploy.sh
-```
-
-This script will:
-- Install Nginx, Node.js, certbot, dnsutils
-- Create web root directories
-- Deploy main site HTML
-- Deploy app site HTML + exposed files (individually, not wildcard)
-- Generate .git artifacts
-- Deploy Nginx **HTTP-only bootstrap** configuration
-- Install dev Node application with Express 4.17.1
-- Create systemd service for dev app
-- Validate and start Nginx on port 80
-
-**Key behavior:** The script detects whether TLS certificates exist. On first run, it deploys HTTP-only configs that reference no certificate paths, allowing Nginx to start successfully.
-
-## Step 7: Verify HTTP Bootstrap
-
-From your local machine:
-
-```bash
-# Check HTTP endpoints work
-curl -I http://paleon-lab-saas.dev
-curl -I http://app.paleon-lab-saas.dev
-curl -I http://dev.paleon-lab-saas.dev
-
-# Verify exposed files are accessible via HTTP
-curl http://app.paleon-lab-saas.dev/.env
-curl http://app.paleon-lab-saas.dev/.git/config
-curl http://app.paleon-lab-saas.dev/openapi.json
-```
-
-## Step 8: Setup TLS
-
-On the EC2 instance, after DNS is fully propagated:
-
-```bash
-sudo ./scripts/setup-ssl.sh
-```
-
-This script will:
-- Verify DNS resolution using dig/nslookup/getent (fallback chain)
-- Request Let's Encrypt certificate for all three hosts
-- Deploy **final HTTPS Nginx configurations** with HTTP→HTTPS redirects
-- Reload Nginx
-- Enable automatic certificate renewal
-
-The final configs include:
-- HTTP (port 80) → HTTPS (port 443) redirects
-- TLS certificate references
-- Full security headers
-- Intentional Permissions-Policy omission on app host only
-
-## Step 9: Verify HTTPS Deployment
-
-### External Verification
+### External Verification (After TLS Configured)
 
 From your local machine:
 
@@ -210,24 +196,28 @@ curl -I https://dev.paleon-lab-saas.dev | grep -i permissions-policy
 echo | openssl s_client -connect paleon-lab-saas.dev:443 -servername paleon-lab-saas.dev 2>/dev/null | openssl x509 -noout -subject -dates
 ```
 
-### On Instance
+---
+
+## Manual TLS Override (If Needed)
+
+If the automated polling times out or you want to trigger TLS setup immediately after DNS propagates:
 
 ```bash
-# Check Nginx status
-sudo systemctl status nginx
+# SSH to instance (optional - can also use AWS Systems Manager Session Manager)
+ssh -i ~/.ssh/your-key.pem ubuntu@<elastic-ip>
 
-# Check dev app status
-sudo systemctl status signaldesk-dev
-
-# Check Nginx logs
-sudo tail -f /var/log/nginx/access.log
-sudo tail -f /var/log/nginx/error.log
-
-# Check dev app logs
-sudo journalctl -u signaldesk-dev -f
+# Run manual TLS setup with --force flag
+sudo ./scripts/setup-ssl.sh --force
 ```
 
-## Step 10: Run Validation
+The `--force` flag:
+- Disables the automated polling timer to avoid conflicts
+- Runs the full DNS check and certbot flow
+- Deploys HTTPS configs and enables certbot renewal
+
+---
+
+## Step 6: Run Validation
 
 On the EC2 instance:
 
@@ -244,6 +234,8 @@ This checks:
 - No private keys committed
 - Scripts are executable
 
+---
+
 ## Reset to Known State
 
 If you need to restore the site to its initial state:
@@ -253,14 +245,15 @@ sudo ./reset.sh
 ```
 
 This will:
-- Stop services
+- Stop services (including TLS polling timer)
 - Clear deployed content
-- Redeploy fresh content (using individual file copies, not wildcards)
-- Recreate exposed .git artifacts
+- Redeploy fresh content using shared bootstrap logic
 - Detect TLS certificates and deploy appropriate configs (HTTP or HTTPS)
 - Restart services
 
 **Note:** This does NOT destroy Terraform infrastructure.
+
+---
 
 ## Troubleshooting
 
@@ -268,22 +261,24 @@ This will:
 - Verify NS delegation at registrar
 - Wait longer for propagation (can take up to 48 hours)
 - Check Route53 hosted zone records
+- Check `/var/log/tls-setup.log` for polling status
 
 ### Let's Encrypt Fails
-- Ensure DNS resolves correctly first
+- Ensure DNS resolves correctly first (check all 3 hosts)
 - Check ports 80/443 are open in security group
 - Verify domain matches Nginx server_name
-- Check Nginx is running and serving HTTP before running setup-ssl.sh
+- Check Nginx is running and serving HTTP before TLS setup
+- Check certbot logs: `sudo journalctl -u certbot -f`
 
-### Nginx Fails to Start on Fresh Instance
-- This should NOT happen if using the corrected bootstrap flow
-- deploy.sh now installs HTTP-only configs first when certificates don't exist
-- Only after setup-ssl.sh obtains certificates are HTTPS configs deployed
+### Nginx Fails to Start
+- This should NOT happen with the corrected bootstrap flow
+- Bootstrap always deploys HTTP-only configs first when certificates don't exist
+- Only after TLS setup are HTTPS configs deployed
 
 ### Exposed Files Not Accessible
 - Check Nginx configuration deployed correctly
-- Verify files exist in /var/www/app/ (not .env.example-exposed)
-- Check Nginx error logs
+- Verify files exist in `/var/www/app/` (not `.env.example-exposed`)
+- Check Nginx error logs: `sudo tail -f /var/log/nginx/error.log`
 - Ensure dotfiles are allowed on app host only
 
 ### Dev App Not Running
@@ -300,9 +295,17 @@ This will:
 - Force reload: `sudo nginx -s reload`
 
 ### Express Version Not Visible
-- The dev app now explicitly sets: `X-Powered-By: Express/4.17.1`
+- The dev app explicitly sets: `X-Powered-By: Express/4.17.1`
 - Check with: `curl -I https://dev.paleon-lab-saas.dev | grep X-Powered-By`
 - If not visible, check dev app is running and Nginx is proxying correctly
+
+### Automated TLS Not Triggering
+- Check timer status: `systemctl status site3-tls-poll.timer`
+- Check timer logs: `journalctl -u site3-tls-poll.service`
+- Check if timer expired (60 min): `cat /var/log/tls-setup.log`
+- Run manual setup: `sudo ./scripts/setup-ssl.sh --force`
+
+---
 
 ## Teardown
 
@@ -311,7 +314,7 @@ To completely remove the infrastructure:
 ```bash
 # Disable DNSSEC first (if enabled)
 cd infrastructure
-terraform destroy -target=aws_route53_dnssec.site3
+terraform destroy -target=aws_route53_hosted_zone_dnssec.site3
 terraform destroy -target=aws_route53_key_signing_key.site3
 
 # Then destroy everything else
@@ -324,8 +327,11 @@ This will delete:
 - Security group
 - Route53 hosted zone and all records
 - DNSSEC signing configuration
+- KMS key (after 7-day deletion window)
 
 **Warning:** This is destructive and cannot be undone.
+
+---
 
 ## Security Notes
 
@@ -337,17 +343,31 @@ This will delete:
 - DNSSEC is enabled for zone integrity
 - CAA records restrict certificate issuance to Let's Encrypt only
 
-## Deployment Sequence Summary
+---
 
-1. Configure terraform.tfvars with your AWS settings
-2. Run `terraform apply` in infrastructure/
+## Architecture Compliance
+
+✅ **Single EC2 instance** — No unnecessary infrastructure added  
+✅ **Nginx + tiny Node app** — No Docker, ECS, or complexity  
+✅ **Static HTML** — No frontend frameworks or build systems  
+✅ **No database** — No RDS, PostgreSQL, or data persistence  
+✅ **No authentication** — No auth flows or fake login systems  
+✅ **Minimal deps** — Only Express 4.17.1 for dev host  
+✅ **Scanner-observable only** — No exploitation or active attacks  
+✅ **Three open ports** — 80, 443 public; 22 admin-only
+
+---
+
+## Deployment Sequence Summary (Automated)
+
+1. Configure `terraform.tfvars` with your AWS settings
+2. Run `terraform apply` in `infrastructure/`
 3. Delegate Route53 nameservers at registrar
-4. Wait for DNS propagation
-5. SSH to EC2 instance
-6. Clone/copy repository to instance
-7. Run `sudo ./scripts/deploy.sh` (HTTP bootstrap)
-8. Verify HTTP endpoints work
-9. Run `sudo ./scripts/setup-ssl.sh` (TLS setup + HTTPS configs)
-10. Verify HTTPS and scanner-visible findings
-11. Run `./validate.sh` for local checks
-12. Use `sudo ./reset.sh` to restore known state if needed
+4. **Wait** — EC2 automatically:
+   - Clones repo and deploys HTTP bootstrap
+   - Starts polling DNS every 5 min
+   - When DNS resolves → requests cert → deploys HTTPS
+5. Verify HTTPS and scanner-visible findings
+6. Use `sudo ./reset.sh` to restore known state if needed
+
+**No SSH required for standard deployment.** SSH is only needed for troubleshooting or manual override.

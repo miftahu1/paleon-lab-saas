@@ -19,3 +19,9 @@ variable "admin_ip_cidr" {
   description = "CIDR block for admin SSH access (your IP address)"
   type        = string
 }
+
+variable "repo_url" {
+  description = "Public Git repository URL for site code (cloned by user_data)"
+  type        = string
+  default     = "https://github.com/miftahu1/paleon-lab-saas.git"
+}

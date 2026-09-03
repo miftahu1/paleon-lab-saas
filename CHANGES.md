@@ -178,6 +178,12 @@
 - `nginx/main-site-http.conf` — HTTP bootstrap for main host
 - `nginx/app-site-http.conf` — HTTP bootstrap for app host  
 - `nginx/dev-site-http.conf` — HTTP bootstrap for dev host
+### Created (5 new files)
+- `nginx/main-site-http.conf` — HTTP bootstrap for main host
+- `nginx/app-site-http.conf` — HTTP bootstrap for app host  
+- `nginx/dev-site-http.conf` — HTTP bootstrap for dev host
+- `scripts/bootstrap-deploy.sh` — Shared idempotent deployment logic
+- `scripts/tls-poll.sh` — DNS polling and automated TLS setup
 
 ### Modified (11 files)
 - `scripts/deploy.sh` — Bootstrap flow, individual file copies, dnsutils, npm ci
@@ -396,3 +402,73 @@ The implementation strictly follows the master prompt's requirement for simplici
 **Total files:** 30+ (documentation, configs, website, infrastructure, scripts)  
 **Validation score:** 40 passed, 2 expected warnings, 0 failed  
 **Deployment estimate:** ~15 minutes infrastructure + ~10 minutes application + ~5 minutes TLS
+
+---
+
+## 11. ✅ Fully Automated Deployment via Cloud-Init (2026-09-03)
+
+**Problem:** The original `user_data.sh` only installed packages and created placeholder pages. Users had to SSH in and manually run `deploy.sh` and `setup-ssl.sh` — but the existing EC2 used a key pair ("EC2 tutorial") with no available private key, making manual deployment impossible.
+
+**Solution:** Complete rewrite of the bootstrap architecture:
+
+### New Files Created
+- `infrastructure/user_data.sh` — Full automation: clones repo, runs bootstrap deployment, sets up systemd timer for TLS polling
+- `scripts/bootstrap-deploy.sh` — Shared idempotent deployment logic (used by user_data, deploy.sh, reset.sh)
+- `scripts/tls-poll.sh` — Systemd timer target: polls DNS every 5 min for 60 min, auto-requests certs when resolved
+
+### Modified Files
+- `scripts/deploy.sh` — Simplified to call `bootstrap-deploy.sh`, keeps manual-friendly interface
+- `scripts/setup-ssl.sh` — Added `--force` flag for manual override after automated TLS
+- `reset.sh` — Uses `bootstrap-deploy.sh` for content deployment
+- `infrastructure/main.tf` — Uses `templatefile()` to inject `repo_url` into user_data; added `repo_url` variable
+- `infrastructure/variables.tf` — Added `repo_url` variable (default: public GitHub URL)
+- `DEPLOYMENT.md` — Complete rewrite documenting automated flow + manual override
+- `README.md` — Updated Quick Start for automated deployment
+- `infrastructure/terraform.tfvars.example` — Added repo_url example
+
+### How First Deployment Handles DNS/Let's Encrypt
+
+1. `terraform apply` → EC2 boots → user_data runs
+2. user_data clones repo, runs bootstrap-deploy (HTTP configs), starts nginx/dev app on port 80
+3. user_data creates systemd timer (`site3-tls-poll.timer`) + service (`site3-tls-poll.service`)
+4. Timer fires every 5 min for 60 min (12 attempts max)
+5. Each fire: `tls-poll.sh` checks DNS for all 3 hosts
+6. **If all 3 resolve to the EIP:**
+   - Runs `certbot certonly --nginx --non-interactive ...`
+   - Deploys HTTPS Nginx configs (with HTTP→HTTPS redirects)
+   - Reloads nginx
+   - Enables `certbot.timer` for auto-renewal
+   - Writes `SUCCESS: TLS configured at $(date)` to `/var/log/tls-setup.log`
+   - Disables `site3-tls-poll.timer`
+7. **If timer expires (60 min) without DNS resolution:**
+   - Writes `TIMEOUT: DNS not propagated after 60 min. Run: sudo ./scripts/setup-ssl.sh` to `/var/log/tls-setup.log`
+   - Disables timer
+   - HTTP bootstrap continues running on port 80
+8. **User can manually complete:** After DNS delegation, run `sudo ./scripts/setup-ssl.sh --force` anytime
+
+### Key Properties
+- **No infinite loop** — Bounded by timer (12 × 5 min = 60 min max)
+- **Clear state** — `/var/log/tls-setup.log` and `/var/lib/site3/tls-poll-start`
+- **Idempotent** — Reboot re-runs user_data but `/var/lib/site3/deployed` exists → skips clone/deploy, keeps timer if not yet succeeded
+- **Manual override works** — `setup-ssl.sh --force` disables timer and runs full TLS setup
+- **No SSH required** — Standard deployment is fully automated
+
+### Files Modified in This Change
+**Created (3):**
+- `infrastructure/user_data.sh` (rewritten)
+- `scripts/bootstrap-deploy.sh`
+- `scripts/tls-poll.sh`
+
+**Modified (7):**
+- `scripts/deploy.sh`
+- `scripts/setup-ssl.sh`
+- `reset.sh`
+- `infrastructure/main.tf`
+- `infrastructure/variables.tf`
+- `DEPLOYMENT.md`
+- `README.md`
+- `infrastructure/terraform.tfvars.example`
+
+**Total files:** ~35 (documentation, configs, website, infrastructure, scripts)
+**Validation score:** 40 passed, 2 expected warnings, 0 failed
+**Deployment estimate:** ~15 minutes infrastructure + automatic application + automatic TLS (after DNS propagation)
