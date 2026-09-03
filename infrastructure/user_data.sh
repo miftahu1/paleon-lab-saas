@@ -1,8 +1,8 @@
 #!/bin/bash
 # Terraform template user-data for Site 3 EC2 instance
 # This file is processed by Terraform templatefile(), which substitutes
-# ${repo_url} and ${expected_ip}. All other shell ${...} tokens are
-# left as literal ${...} by using $${...} so the shell expands them at runtime.
+# ${repo_url} and ${expected_ip}. All other shell $${...} tokens are
+# left as literal $${...} by using $$$${...} so the shell expands them at runtime.
 
 set -euo pipefail
 
@@ -18,11 +18,11 @@ DEPLOY_MARKER="/var/lib/site3/deployed"
 TLS_POLL_START="/var/lib/site3/tls-poll-start"
 TLS_LOG="/var/log/tls-setup.log"
 DOMAIN="paleon-lab-saas.dev"
-EMAIL="admin@${DOMAIN}"
+EMAIL="admin@$${DOMAIN}"
 
 # Simple logger
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a /var/log/cloud-init.log
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $$*" | tee -a /var/log/cloud-init.log
 }
 
 log "=== Site 3 Cloud-init Starting ==="
