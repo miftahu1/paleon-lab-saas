@@ -97,11 +97,11 @@ resource "aws_eip" "site3" {
 
 # EC2 instance
 resource "aws_instance" "site3" {
-  ami                         = data.aws_ami.ubuntu_2404.id
+  ami                         = "ami-0d7f022123f8ff19d"
   instance_type               = "t3.micro"
   key_name                    = var.ssh_key_name
   vpc_security_group_ids      = [aws_security_group.site3.id]
-  associate_public_ip_address = false # Use Elastic IP instead
+  associate_public_ip_address = true
 
   user_data = templatefile("${path.module}/user_data.sh", {
     repo_url    = var.repo_url
@@ -209,15 +209,15 @@ resource "aws_route53_zone" "site3" {
 
 # DNSSEC Key Signing Key using customer-managed KMS key
 # Creating this resource enables DNSSEC for the hosted zone
-resource "aws_route53_key_signing_key" "site3" {
-  hosted_zone_id             = aws_route53_zone.site3.zone_id
-  key_management_service_arn = aws_kms_key.dnssec.arn
-  name                       = "site3-ksk"
-}
+#resource "aws_route53_key_signing_key" "site3" {
+#  hosted_zone_id             = aws_route53_zone.site3.zone_id
+#  key_management_service_arn = aws_kms_key.dnssec.arn
+#  name                       = "site3-ksk"
+#}
 
 # Activate DNSSEC signing for the hosted zone
 resource "aws_route53_hosted_zone_dnssec" "site3" {
-  hosted_zone_id = aws_route53_key_signing_key.site3.hosted_zone_id
+  hosted_zone_id = aws_route53_zone.site3.zone_id
 }
 
 # A records
