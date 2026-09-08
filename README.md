@@ -57,19 +57,24 @@ cd infrastructure
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars with your AWS key name and admin IP
 
-# 3. Deploy infrastructure + application (fully automated)
+# 3. Bootstrap the private, encrypted S3 Terraform-state backend
+cd ..
+bash scripts/bootstrap-backend.sh
+cd infrastructure
 terraform init
+
+# 4. Deploy infrastructure + application (fully automated)
 terraform apply
 
-# 4. Delegate DNS at registrar to Route53 nameservers (from terraform output)
+# 5. Delegate DNS at registrar to Route53 nameservers (from terraform output)
 
-# 5. Wait for DNS propagation (5-30 min) - EC2 handles the rest automatically:
+# 6. Wait for DNS propagation (5-30 min) - EC2 handles the rest automatically:
 #    - Clones repo and deploys HTTP bootstrap
 #    - Polls DNS every 5 min for up to 60 min
 #    - When DNS resolves: requests Let's Encrypt cert, deploys HTTPS configs
 #    - Check /var/log/tls-setup.log for status
 
-# 6. Verify HTTPS endpoints (after TLS configured)
+# 7. Verify HTTPS endpoints (after TLS configured)
 curl -I https://paleon-lab-saas.dev
 curl -I https://app.paleon-lab-saas.dev
 curl -I https://dev.paleon-lab-saas.dev

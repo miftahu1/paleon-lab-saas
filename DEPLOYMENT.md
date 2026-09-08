@@ -25,6 +25,7 @@ Site 3 now supports **fully automated deployment** via Terraform cloud-init. A s
 - Elastic IP allocation permissions
 - Security group creation permissions
 - KMS permissions for DNSSEC signing (us-east-1)
+- S3 permissions to bootstrap and use the dedicated Terraform state bucket
 
 ### Domain
 - `paleon-lab-saas.dev` must be available
@@ -57,11 +58,50 @@ The `repo_url` variable is optional and defaults to `https://github.com/miftahu1
 
 ---
 
-## Step 2: Deploy Infrastructure
+## Step 2: Bootstrap and Initialize the Terraform Backend
+
+Terraform state is stored in the private, encrypted S3 backend
+`s3://paleon-site3-terraform-state/site3/terraform.tfstate` in `us-east-1`.
+The backend bucket is created out of band because it must exist before
+Terraform can initialize the backend.
+
+For a new deployment:
+
+```bash
+bash scripts/bootstrap-backend.sh
+cd infrastructure
+terraform init
+```
+
+### Migrating an Existing Local State
+
+Run these steps from the machine that holds the existing local state. Do not
+run `terraform apply` or `terraform destroy` as part of this migration.
 
 ```bash
 cd infrastructure
-terraform init
+cp terraform.tfstate "terraform.tfstate.pre-s3-migration.$(date +%Y%m%d%H%M%S).backup"
+cd ..
+bash scripts/bootstrap-backend.sh
+cd infrastructure
+terraform init -migrate-state
+terraform state pull > terraform-state-post-migration.json
+terraform validate
+terraform plan
+```
+
+Confirm the object exists at
+`s3://paleon-site3-terraform-state/site3/terraform.tfstate` and that the plan
+has no resource changes before considering the migration complete. The backup
+and `terraform-state-post-migration.json` contain state data and must remain
+outside version control.
+
+---
+
+## Step 3: Deploy Infrastructure
+
+```bash
+cd infrastructure
 terraform plan
 terraform apply
 ```
